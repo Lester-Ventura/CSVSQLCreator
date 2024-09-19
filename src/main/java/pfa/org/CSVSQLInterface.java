@@ -1,125 +1,117 @@
 package pfa.org;
 
 import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.HashSet;
+import java.io.FileWriter;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
-
-import com.opencsv.CSVParser;
-import com.opencsv.CSVParserBuilder;
-import com.opencsv.CSVReader;
-import com.opencsv.CSVReaderBuilder;
-import com.opencsv.exceptions.CsvValidationException;
+import java.util.ListIterator;
 
 class CSVSQLInterface{
-    private File FileCSVPath;
-    private LinkedList<LinkedList<String>> rawCSV;
-    private LinkedList<String> headers;
-    private HashSet<String> selectedColumns;
+    private ArrayList<String[]> selectedColumns;
     private String tableName;
+    private final CSVManager csv;
     CSVSQLInterface(String CSVFilePath){
-        this.FileCSVPath = new File(CSVFilePath);
-        try
-        {
-        //Get the headers for indexing later.
-        CSVParser parser = new CSVParserBuilder().withSeparator(',').withIgnoreQuotations(false).build();
-        CSVReader reader = new CSVReaderBuilder(new FileReader(FileCSVPath)).withCSVParser(parser).build();
-        headers = new LinkedList<>(Arrays.asList(reader.readNext()));
-        // System.out.println("Size of Header: "+headers.size());
-        rawCSV = new LinkedList<>();
-        // Puts the entire data in a map.
-        System.out.println(headers.toString());
-        String[] line;
-        // int index = 1 ; This is for testing
-        LinkedList<String> putIntoMap = new LinkedList<>();
-            while((line = reader.readNext())!=null)
-            {
-                for(String text:line )
-                {
-                // System.out.println("Line "+index+":"+ text);
-                // index++;
-                    if(putIntoMap.size()<headers.size()-1)
-                    putIntoMap.add(text);
-                    else
-                    {
-                    putIntoMap.add(text);
-                    rawCSV.add(putIntoMap);
-                    putIntoMap.clear();
-                    }
-                }   
-            }
-          System.out.println("CSV Reading Successful.");
-        }
-        catch(IOException | CsvValidationException e)
-        {System.out.println("Failure to Initialize!");}  
+        csv = new CSVManager(CSVFilePath);
     }
     public void selectedTable(String table){
         this.tableName = table;
     }
 
-    public void selectNewColumns(String[] columns){
-        selectedColumns = new HashSet<>();
-        for(String checkColumns: columns){
-            for(String header: this.headers){
-                if(header.equals(checkColumns)){
-                    selectedColumns.add(checkColumns);
-                    System.out.println("Selection Successful: "+checkColumns);
-                    break;
+    public void selectNewColumns(String[] columns, String[] nameColumns){
+        selectedColumns = new ArrayList<>();
+        if(columns.length != nameColumns.length){
+            System.out.println("Column Selection Failed: Unequal Lengths!");
+            return;
+        }
+        for(int i=0; i<columns.length;i++){
+               if(csv.verifyColumns(columns[i])){
+                    selectedColumns.add(new String[] {columns[i],nameColumns[i]});
+                    System.out.println("Selection Successful: "+ columns[i] +" as "+ nameColumns[i] );
                 }
-             }
         }
         System.out.println("Column Selection Ended.");
     }
-    public void readCSV(){
-        try{
-        final CSVParser parser = new CSVParserBuilder().withSeparator(',').withIgnoreQuotations(false).build();
-        final CSVReader reader = new CSVReaderBuilder(new FileReader(FileCSVPath)).withSkipLines(1).withCSVParser(parser).build();
-        String[] nextRecord; 
-            while ((nextRecord = reader.readNext()) != null) { 
-                for (String cell : nextRecord) { 
-                    System.out.print(cell + "\t"); 
-                } 
-            } 
-        }
-        catch(Exception e){
-            System.out.println("Something went wrong!");
-            e.printStackTrace();
-        }
-    }
     //Creates Inserts based on parameters,
-    public void createInsertSQL(String FileDestination){
-        if(selectedColumns==null||tableName==null){
-            System.out.println("No Selected Columns/Table!");
+    public void createAllInsertSQL(String FileDestination){
+        if(checkTableOrColumnEmpty()){
             return;
         }
-        Iterator selector = selectedColumns.iterator();
-        String columns = "";
+        ListIterator<String[]> selector = selectedColumns.listIterator();
+        LinkedList<LinkedList<String>> csvInsertList = new LinkedList<>();
+        File fileDest = new File(FileDestination);
+        try{
+        FileWriter fileToWrite = new FileWriter(fileDest,true);
         while(selector.hasNext()){
-            String a = (String)selector.next();
-            if(!selector.hasNext())
-            columns += a;
-            else
-            columns += a+",";
+            csvInsertList.add(csv.CSVFindAllInColumn(selector.next()[0]));
         }
-        System.out.println("INSERT INTO "+tableName+"("+columns+") VALUES("+")");
-        /*try{
-            FileWriter fileToWrite = new FileWriter(new File(FileDestination+".sql"));
-            for(int x = 0; x<rawCSV.size();x++){
-            rawCSV.get(0);
-
-            fileToWrite.write("INSERT INTO "+tableName+" ("+") VALUES("+")");
+        for(int i=0;i<csvInsertList.get(0).size();i++){
+            String columns = "";
+            String values = "";
+            for(int b = 0;b<csvInsertList.size();b++){
+                if(csvInsertList.get(b).get(i).equals("")){
+                    continue;
+                }
+                if(columns.equals("")){
+                    columns = selectedColumns.get(b)[1];
+                }
+                else{
+                    columns += ","+selectedColumns.get(b)[1];
+                }
+                if(values.equals("")){
+                    values += "\""+csvInsertList.get(b).get(i)+"\"";
+                }
+                else{
+                    values += ", \""+csvInsertList.get(b).get(i)+"\"";
+                }
             }
-            fileToWrite.close();
+            if(columns.equals(""))
+            continue;
+        fileToWrite.write("INSERT INTO "+tableName+"("+columns+") VALUES("+values+");\n");
+            }
+        fileToWrite.close();
+        }    
+        catch(Exception e){
+            System.out.println("File failed to write!");
+            }
+        
+    }
+    public void createUniqueInsertSQL(String FileDestination){
+        if(checkTableOrColumnEmpty()){
+            return;
         }
-        catch(IOException e){
-            System.out.println("IOException Occurred!");
-            e.printStackTrace();
-        }*/
+        if(selectedColumns.size()>1){
+            System.out.println("Size of Colmuns too large for unique select!");
+        }
+        ListIterator<String[]> selector = selectedColumns.listIterator();
+        LinkedList<LinkedHashSet<String>> csvInsertList = new LinkedList<>();
+        while(selector.hasNext()){
+            csvInsertList.add(csv.CSVFindUniqueInColumn(selector.next()[0]));
+        }
+        
+        String columns = selectedColumns.get(0)[1];
+        int i = 0;
+        File fileDest = new File(FileDestination);
+        try{
+        FileWriter fileToWrite = new FileWriter(fileDest,true);
+        for(Iterator<String> hashIterator = csvInsertList.get(i).iterator();hashIterator.hasNext();){
+                String values = "\""+hashIterator.next()+"\"";
+                fileToWrite.write("INSERT INTO "+tableName+"("+columns+") VALUES("+values+");\n");
+            }
+        fileToWrite.close();
+        }
+        catch(Exception e){
+            System.out.println("File failed to write!");
+        }
+        }
+        private boolean checkTableOrColumnEmpty(){
+            if(selectedColumns == null)
+                System.out.println("Error: No Selected Columns!");
+            if(tableName == null)
+                System.out.println("Error: Empty Table Name!");
+            return !(selectedColumns == null || tableName == null);
+        }
+      
     }
-    public void creationTemplate(){
 
-    }
-}
